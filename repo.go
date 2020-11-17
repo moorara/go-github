@@ -3,6 +3,8 @@ package github
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -32,6 +34,25 @@ type Repository struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 	PushedAt      time.Time `json:"pushed_at"`
 }
+
+// Permission represents a GitHub repository permission.
+// See https://docs.github.com/en/github/setting-up-and-managing-organizations-and-teams/repository-permission-levels-for-an-organization
+type Permission string
+
+const (
+	// PermissionNone does not allow anything.
+	PermissionNone Permission = "none"
+	// PermissionRead allows a contributor to view or discuss a project.
+	PermissionRead Permission = "read"
+	// PermissionTriage allows a contributor to manage issues and pull requests without write access.
+	PermissionTriage Permission = "triage"
+	// PermissionWrite allows a contributor to push to a project.
+	PermissionWrite Permission = "write"
+	// PermissionMaintain allows a contributor to manage a repository without access to sensitive or destructive actions.
+	PermissionMaintain Permission = "maintain"
+	// PermissionAdmin gives a contributor full access to a project, including sensitive and destructive actions.
+	PermissionAdmin Permission = "admin"
+)
 
 type (
 	// Hash is a GitHub hash object.
@@ -194,6 +215,55 @@ type Event struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type (
+	// ReleaseParams is used for creating or updating a GitHub release.
+	ReleaseParams struct {
+		Name       string `json:"name"`
+		TagName    string `json:"tag_name"`
+		Target     string `json:"target_commitish"`
+		Draft      bool   `json:"draft"`
+		Prerelease bool   `json:"prerelease"`
+		Body       string `json:"body"`
+	}
+
+	// Release is a GitHub release object.
+	Release struct {
+		ID          int            `json:"id"`
+		Name        string         `json:"name"`
+		TagName     string         `json:"tag_name"`
+		Target      string         `json:"target_commitish"`
+		Draft       bool           `json:"draft"`
+		Prerelease  bool           `json:"prerelease"`
+		Body        string         `json:"body"`
+		URL         string         `json:"url"`
+		HTMLURL     string         `json:"html_url"`
+		AssetsURL   string         `json:"assets_url"`
+		UploadURL   string         `json:"upload_url"`
+		TarballURL  string         `json:"tarball_url"`
+		ZipballURL  string         `json:"zipball_url"`
+		CreatedAt   time.Time      `json:"created_at"`
+		PublishedAt time.Time      `json:"published_at"`
+		Author      User           `json:"author"`
+		Assets      []ReleaseAsset `json:"assets"`
+	}
+
+	// ReleaseAsset is a Github release asset object.
+	ReleaseAsset struct {
+		ID            int       `json:"id"`
+		Name          string    `json:"name"`
+		Label         string    `json:"label"`
+		State         string    `json:"state"`
+		ContentType   string    `json:"content_type"`
+		Size          int       `json:"size"`
+		DownloadCount int       `json:"download_count"`
+		URL           string    `json:"url"`
+		DownloadURL   string    `json:"browser_download_url"`
+		CreatedAt     time.Time `json:"created_at"`
+		UpdatedAt     time.Time `json:"updated_at"`
+		Uploader      User      `json:"uploader"`
+	}
+)
+
 // Get retrieves a repository by its name.
 // See https://docs.github.com/rest/reference/repos#get-a-repository
 func (s *RepoService) Get(ctx context.Context) (*Repository, *Response, error) {
@@ -211,6 +281,28 @@ func (s *RepoService) Get(ctx context.Context) (*Repository, *Response, error) {
 	}
 
 	return repository, resp, nil
+}
+
+// Permission returns the repository permission for a collaborator (user).
+// See https://docs.github.com/en/rest/reference/repos#get-repository-permissions-for-a-user
+func (s *RepoService) Permission(ctx context.Context, username string) (Permission, *Response, error) {
+	url := fmt.Sprintf("/repos/%s/%s/collaborators/%s/permission", s.owner, s.repo, username)
+	req, err := s.client.NewRequest(ctx, "GET", url, nil)
+	if err != nil {
+		return "", nil, err
+	}
+
+	body := new(struct {
+		Permission Permission `json:"permission"`
+		User       User       `json:"user"`
+	})
+
+	resp, err := s.client.Do(req, body)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return body.Permission, resp, nil
 }
 
 // Commit retrieves a commit for a given repository by its reference.
@@ -268,6 +360,31 @@ func (s *RepoService) Branch(ctx context.Context, name string) (*Branch, *Respon
 	}
 
 	return branch, resp, nil
+}
+
+// BranchProtection enables/disables a branch protection for administrator users.
+// See https://docs.github.com/rest/reference/repos#set-admin-branch-protection
+// See https://docs.github.com/rest/reference/repos#delete-admin-branch-protection
+func (s *RepoService) BranchProtection(ctx context.Context, branch string, enabled bool) (*Response, error) {
+	var method string
+	if enabled {
+		method = "POST"
+	} else {
+		method = "DELETE"
+	}
+
+	url := fmt.Sprintf("/repos/%s/%s/branches/%s/protection/enforce_admins", s.owner, s.repo, branch)
+	req, err := s.client.NewRequest(ctx, method, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := s.client.Do(req, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }
 
 // Tags retrieves all tags for a given repository page by page.
@@ -395,4 +512,113 @@ func (s *RepoService) Events(ctx context.Context, number, pageSize, pageNo int) 
 	}
 
 	return events, resp, nil
+}
+
+// LatestRelease returns the latest GitHub release.
+// The latest release is the most recent non-prerelease and non-draft release.
+// See https://docs.github.com/rest/reference/repos#get-the-latest-release
+func (s *RepoService) LatestRelease(ctx context.Context) (*Release, *Response, error) {
+	url := fmt.Sprintf("/repos/%s/%s/releases/latest", s.owner, s.repo)
+	req, err := s.client.NewRequest(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	release := new(Release)
+
+	resp, err := s.client.Do(req, release)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return release, resp, nil
+}
+
+// CreateRelease creates a new GitHub release.
+// See https://docs.github.com/rest/reference/repos#create-a-release
+func (s *RepoService) CreateRelease(ctx context.Context, params ReleaseParams) (*Release, *Response, error) {
+	url := fmt.Sprintf("/repos/%s/%s/releases", s.owner, s.repo)
+	req, err := s.client.NewRequest(ctx, "POST", url, params)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	release := new(Release)
+
+	resp, err := s.client.Do(req, release)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return release, resp, nil
+}
+
+// UpdateRelease updates an existing GitHub release.
+// See https://docs.github.com/rest/reference/repos#update-a-release
+func (s *RepoService) UpdateRelease(ctx context.Context, releaseID int, params ReleaseParams) (*Release, *Response, error) {
+	url := fmt.Sprintf("/repos/%s/%s/releases/%d", s.owner, s.repo, releaseID)
+	req, err := s.client.NewRequest(ctx, "PATCH", url, params)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	release := new(Release)
+
+	resp, err := s.client.Do(req, release)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return release, resp, nil
+}
+
+// UploadReleaseAsset uploads a file to a GitHub release.
+// See https://docs.github.com/rest/reference/repos#upload-a-release-asset
+func (s *RepoService) UploadReleaseAsset(ctx context.Context, releaseID int, assetFile, assetLabel string) (*ReleaseAsset, *Response, error) {
+	url := fmt.Sprintf("/repos/%s/%s/releases/%d/assets", s.owner, s.repo, releaseID)
+	req, closer, err := s.client.NewUploadRequest(ctx, url, assetFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer closer.Close()
+
+	q := req.URL.Query()
+	if assetName := filepath.Base(assetFile); assetName != "" {
+		q.Add("name", assetName)
+	}
+	if assetLabel != "" {
+		q.Add("label", assetLabel)
+	}
+	req.URL.RawQuery = q.Encode()
+
+	asset := new(ReleaseAsset)
+
+	resp, err := s.client.Do(req, asset)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return asset, resp, nil
+}
+
+// DownloadReleaseAsset downloads an asset from a GitHub release.
+func (s *RepoService) DownloadReleaseAsset(ctx context.Context, releaseTag, assetName, outFile string) (*Response, error) {
+	url := fmt.Sprintf("/%s/%s/releases/download/%s/%s", s.owner, s.repo, releaseTag, assetName)
+	req, err := s.client.NewDownloadRequest(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := os.OpenFile(outFile, os.O_WRONLY, 0755)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	resp, err := s.client.Do(req, f)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }

@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	userBody1 = `{
+	userBody = `{
 		"login": "octocat",
 		"id": 1,
 		"url": "https://api.github.com/users/octocat",
@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	user1 = User{
+	user = User{
 		ID:      1,
 		Login:   "octocat",
 		Type:    "User",
@@ -33,6 +33,95 @@ var (
 		HTMLURL: "https://github.com/octocat",
 	}
 )
+
+func TestUserService_User(t *testing.T) {
+	c := &Client{
+		httpClient: &http.Client{},
+		rates:      map[rateGroup]Rate{},
+		apiURL:     publicUploadURL,
+	}
+
+	tests := []struct {
+		name             string
+		mockResponses    []MockResponse
+		s                *UsersService
+		ctx              context.Context
+		expectedUser     *User
+		expectedResponse *Response
+		expectedError    string
+	}{
+		{
+			name:          "NilContext",
+			mockResponses: []MockResponse{},
+			s: &UsersService{
+				client: c,
+			},
+			ctx:           nil,
+			expectedError: `net/http: nil Context`,
+		},
+		{
+			name: "InvalidStatusCode",
+			mockResponses: []MockResponse{
+				{"GET", "/user", 401, http.Header{}, `{
+					"message": "Bad credentials"
+				}`},
+			},
+			s: &UsersService{
+				client: c,
+			},
+			ctx:           context.Background(),
+			expectedError: `GET /user: 401 Bad credentials`,
+		},
+		{
+			name: "ّInvalidResponse",
+			mockResponses: []MockResponse{
+				{"GET", "/user", 200, http.Header{}, `{`},
+			},
+			s: &UsersService{
+				client: c,
+			},
+			ctx:           context.Background(),
+			expectedError: `unexpected EOF`,
+		},
+		{
+			name: "Success",
+			mockResponses: []MockResponse{
+				{"GET", "/user", 200, header, userBody},
+			},
+			s: &UsersService{
+				client: c,
+			},
+			ctx:          context.Background(),
+			expectedUser: &user,
+			expectedResponse: &Response{
+				Pages: expectedPages,
+				Rate:  expectedRate,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ts := newHTTPTestServer(tc.mockResponses...)
+			tc.s.client.apiURL, _ = url.Parse(ts.URL)
+
+			user, resp, err := tc.s.User(tc.ctx)
+
+			if tc.expectedError != "" {
+				assert.Nil(t, user)
+				assert.Nil(t, resp)
+				assert.EqualError(t, err, tc.expectedError)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectedUser, user)
+				assert.NotNil(t, resp)
+				assert.NotNil(t, resp.Response)
+				assert.Equal(t, tc.expectedResponse.Pages, resp.Pages)
+				assert.Equal(t, tc.expectedResponse.Rate, resp.Rate)
+			}
+		})
+	}
+}
 
 func TestUserService_Get(t *testing.T) {
 	c := &Client{
@@ -65,7 +154,7 @@ func TestUserService_Get(t *testing.T) {
 			name: "InvalidStatusCode",
 			mockResponses: []MockResponse{
 				{"GET", "/users/octocat", 401, http.Header{}, `{
-					"message": "invalid credentials"
+					"message": "Bad credentials"
 				}`},
 			},
 			s: &UsersService{
@@ -73,7 +162,7 @@ func TestUserService_Get(t *testing.T) {
 			},
 			ctx:           context.Background(),
 			username:      "octocat",
-			expectedError: `GET /users/octocat: 401 invalid credentials`,
+			expectedError: `GET /users/octocat: 401 Bad credentials`,
 		},
 		{
 			name: "ّInvalidResponse",
@@ -90,14 +179,14 @@ func TestUserService_Get(t *testing.T) {
 		{
 			name: "Success",
 			mockResponses: []MockResponse{
-				{"GET", "/users/octocat", 200, header, userBody1},
+				{"GET", "/users/octocat", 200, header, userBody},
 			},
 			s: &UsersService{
 				client: c,
 			},
 			ctx:          context.Background(),
 			username:     "octocat",
-			expectedUser: &user1,
+			expectedUser: &user,
 			expectedResponse: &Response{
 				Pages: expectedPages,
 				Rate:  expectedRate,
