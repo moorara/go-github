@@ -17,8 +17,9 @@ import (
 )
 
 var (
-	publicAPIURL, _    = url.Parse("https://api.github.com")
-	publicUploadURL, _ = url.Parse("https://uploads.github.com")
+	publicAPIURL, _      = url.Parse("https://api.github.com")
+	publicUploadURL, _   = url.Parse("https://uploads.github.com")
+	publicDownloadURL, _ = url.Parse("https://github.com")
 )
 
 const (
@@ -51,6 +52,7 @@ type Client struct {
 
 	apiURL      *url.URL
 	uploadURL   *url.URL
+	downloadURL *url.URL
 	accessToken string
 
 	// Services
@@ -73,6 +75,7 @@ func NewClient(accessToken string) *Client {
 		rates:       map[rateGroup]Rate{},
 		apiURL:      publicAPIURL,
 		uploadURL:   publicUploadURL,
+		downloadURL: publicDownloadURL,
 		accessToken: accessToken,
 	}
 
@@ -84,7 +87,7 @@ func NewClient(accessToken string) *Client {
 }
 
 // NewEnterpriseClient creates a new client for calling an enterprise GitHub API v3.
-func NewEnterpriseClient(apiURL, uploadURL, accessToken string) (*Client, error) {
+func NewEnterpriseClient(apiURL, uploadURL, downloadURL, accessToken string) (*Client, error) {
 	entAPIURL, err := url.Parse(apiURL)
 	if err != nil {
 		return nil, err
@@ -95,11 +98,17 @@ func NewEnterpriseClient(apiURL, uploadURL, accessToken string) (*Client, error)
 		return nil, err
 	}
 
+	entDownloadURL, err := url.Parse(downloadURL)
+	if err != nil {
+		return nil, err
+	}
+
 	c := &Client{
 		httpClient:  newHTTPClient(),
 		rates:       map[rateGroup]Rate{},
 		apiURL:      entAPIURL,
 		uploadURL:   entUploadURL,
+		downloadURL: entDownloadURL,
 		accessToken: accessToken,
 	}
 
@@ -111,21 +120,28 @@ func NewEnterpriseClient(apiURL, uploadURL, accessToken string) (*Client, error)
 }
 
 // NewRequest creates a new HTTP request for a GitHub API v3.
+// If body implements the io.Reader interface, the raw request body will be read.
+// Otherwise, the request body will be JOSN-encoded.
 func (c *Client) NewRequest(ctx context.Context, method, url string, body interface{}) (*http.Request, error) {
 	u, err := c.apiURL.Parse(url)
 	if err != nil {
 		return nil, err
 	}
 
-	var buf io.ReadWriter
+	var reader io.Reader
 	if body != nil {
-		buf = new(bytes.Buffer)
-		if err := json.NewEncoder(buf).Encode(body); err != nil {
-			return nil, err
+		if r, ok := body.(io.Reader); ok {
+			reader = r
+		} else {
+			buf := new(bytes.Buffer)
+			if err := json.NewEncoder(buf).Encode(body); err != nil {
+				return nil, err
+			}
+			reader = buf
 		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, u.String(), buf)
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), reader)
 	if err != nil {
 		return nil, err
 	}
@@ -145,6 +161,8 @@ func (c *Client) NewRequest(ctx context.Context, method, url string, body interf
 }
 
 // NewPageRequest creates a new HTTP request for a GitHub API v3 with page parameters.
+// If body implements the io.Reader interface, the raw request body will be read.
+// Otherwise, the request body will be JOSN-encoded.
 func (c *Client) NewPageRequest(ctx context.Context, method, url string, pageSize, pageNo int, body interface{}) (*http.Request, error) {
 	req, err := c.NewRequest(ctx, method, url, body)
 	if err != nil {
@@ -152,42 +170,41 @@ func (c *Client) NewPageRequest(ctx context.Context, method, url string, pageSiz
 	}
 
 	q := req.URL.Query()
-
 	if pageSize > 0 {
 		q.Add("per_page", strconv.Itoa(pageSize))
 	}
-
 	if pageNo > 0 {
 		q.Add("page", strconv.Itoa(pageNo))
 	}
-
 	req.URL.RawQuery = q.Encode()
 
 	return req, nil
 }
 
-// NewUploadRequest creates a new HTTP request for uploading a file to GitHub API v3.
-func (c *Client) NewUploadRequest(ctx context.Context, url, filepath string) (*http.Request, error) {
+// NewUploadRequest creates a new HTTP request for uploading a file to a GitHub release.
+// When successful, it returns a closer for the given file that should be closed after making the request.
+func (c *Client) NewUploadRequest(ctx context.Context, url, filepath string) (*http.Request, io.Closer, error) {
 	u, err := c.uploadURL.Parse(url)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	f, err := os.Open(filepath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	defer f.Close()
 
 	stat, err := f.Stat()
 	if err != nil {
-		return nil, err
+		f.Close()
+		return nil, nil, err
 	}
 
 	// Read the first 512 bytes of file to determine the media type of the file
 	buff := make([]byte, 512)
 	if _, err := f.Read(buff); err != nil {
-		return nil, err
+		f.Close()
+		return nil, nil, err
 	}
 
 	// http.DetectContentType will return "application/octet-stream" if it cannot determine a more specific one
@@ -195,18 +212,41 @@ func (c *Client) NewUploadRequest(ctx context.Context, url, filepath string) (*h
 
 	// Reset the offset back to the beginning of the file
 	if _, err = f.Seek(0, io.SeekStart); err != nil {
-		return nil, err
+		f.Close()
+		return nil, nil, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", u.String(), f)
 	if err != nil {
-		return nil, err
+		f.Close()
+		return nil, nil, err
 	}
 
 	req.ContentLength = stat.Size()
 	req.Header.Set(headerUserAgent, userAgent)
 	req.Header.Set(headerAccept, mediaTypeV3)
 	req.Header.Set(headerContentType, mediaType)
+
+	if c.accessToken != "" {
+		req.Header.Set(headerAuth, fmt.Sprintf("token %s", c.accessToken))
+	}
+
+	return req, f, nil
+}
+
+// NewDownloadRequest creates a new HTTP request for downloading a file from a GitHub release.
+func (c *Client) NewDownloadRequest(ctx context.Context, url string) (*http.Request, error) {
+	u, err := c.downloadURL.Parse(url)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set(headerUserAgent, userAgent)
 
 	if c.accessToken != "" {
 		req.Header.Set(headerAuth, fmt.Sprintf("token %s", c.accessToken))

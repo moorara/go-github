@@ -28,6 +28,26 @@ type User struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
+// User returns the authenticated user.
+// If the access token does not have the user scope, then the response includes only the public information.
+// If the access token has the user scope, then the response includes the public and private information.
+// See https://docs.github.com/rest/reference/users#get-the-authenticated-user
+func (s *UsersService) User(ctx context.Context) (*User, *Response, error) {
+	req, err := s.client.NewRequest(ctx, "GET", "/user", nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	user := new(User)
+
+	resp, err := s.client.Do(req, user)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return user, resp, nil
+}
+
 // Get retrieves a user by its username (login).
 // See https://docs.github.com/rest/reference/users#get-a-user
 func (s *UsersService) Get(ctx context.Context, username string) (*User, *Response, error) {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,6 +56,7 @@ func TestNewClient(t *testing.T) {
 			assert.NotNil(t, c.rates)
 			assert.NotNil(t, c.apiURL)
 			assert.NotNil(t, c.uploadURL)
+			assert.NotNil(t, c.downloadURL)
 			assert.Equal(t, tc.accessToken, c.accessToken)
 			assert.NotNil(t, c.Users)
 		})
@@ -66,6 +68,7 @@ func TestNewEnterpriseClient(t *testing.T) {
 		name          string
 		apiURL        string
 		uploadURL     string
+		downloadURL   string
 		accessToken   string
 		expectedError string
 	}{
@@ -77,24 +80,33 @@ func TestNewEnterpriseClient(t *testing.T) {
 			expectedError: `parse ":invalid": missing protocol scheme`,
 		},
 		{
-			name:          "InvalidAPIURL",
-			apiURL:        "https://github.internal.com",
+			name:          "InvalidUploadURL",
+			apiURL:        "https://api.github.internal.com",
 			uploadURL:     ":invalid",
 			accessToken:   "access-token",
 			expectedError: `parse ":invalid": missing protocol scheme`,
 		},
 		{
-			name:          "Success",
-			apiURL:        "https://github.internal.com",
+			name:          "InvalidDownloadURL",
+			apiURL:        "https://api.github.internal.com",
 			uploadURL:     "https://uploads.github.internal.com",
+			downloadURL:   ":invalid",
 			accessToken:   "access-token",
-			expectedError: "",
+			expectedError: `parse ":invalid": missing protocol scheme`,
+		},
+		{
+			name:          "Success",
+			apiURL:        "https://api.github.internal.com",
+			uploadURL:     "https://uploads.github.internal.com",
+			downloadURL:   "https://github.internal.com",
+			accessToken:   "access-token",
+			expectedError: ``,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			c, err := NewEnterpriseClient(tc.apiURL, tc.uploadURL, tc.accessToken)
+			c, err := NewEnterpriseClient(tc.apiURL, tc.uploadURL, tc.downloadURL, tc.accessToken)
 
 			if tc.expectedError != "" {
 				assert.Nil(t, c)
@@ -106,6 +118,7 @@ func TestNewEnterpriseClient(t *testing.T) {
 				assert.NotNil(t, c.rates)
 				assert.NotNil(t, c.apiURL)
 				assert.NotNil(t, c.uploadURL)
+				assert.NotNil(t, c.downloadURL)
 				assert.Equal(t, tc.accessToken, c.accessToken)
 				assert.NotNil(t, c.Users)
 			}
@@ -147,11 +160,27 @@ func TestClient_NewRequest(t *testing.T) {
 			expectedError: `net/http: nil Context`,
 		},
 		{
-			name:          "Success",
+			name:          "Success_Writer",
 			ctx:           context.Background(),
 			method:        "GET",
 			url:           "/user",
-			body:          "request body",
+			body:          strings.NewReader("content"),
+			expectedError: ``,
+		},
+		{
+			name:          "Success_Struct",
+			ctx:           context.Background(),
+			method:        "GET",
+			url:           "/user",
+			body:          new(struct{}),
+			expectedError: ``,
+		},
+		{
+			name:          "Success_Map",
+			ctx:           context.Background(),
+			method:        "GET",
+			url:           "/user",
+			body:          make(map[string]interface{}),
 			expectedError: ``,
 		},
 	}
@@ -201,13 +230,33 @@ func TestClient_NewPageRequest(t *testing.T) {
 			expectedError: `net/http: nil Context`,
 		},
 		{
-			name:          "Success",
+			name:          "Success_Writer",
 			ctx:           context.Background(),
 			method:        "GET",
 			url:           "/user",
 			pageSize:      20,
 			pageNo:        2,
-			body:          "request body",
+			body:          strings.NewReader("content"),
+			expectedError: ``,
+		},
+		{
+			name:          "Success_Struct",
+			ctx:           context.Background(),
+			method:        "GET",
+			url:           "/user",
+			pageSize:      20,
+			pageNo:        2,
+			body:          new(struct{}),
+			expectedError: ``,
+		},
+		{
+			name:          "Success_Map",
+			ctx:           context.Background(),
+			method:        "GET",
+			url:           "/user",
+			pageSize:      20,
+			pageNo:        2,
+			body:          make(map[string]interface{}),
 			expectedError: ``,
 		},
 	}
@@ -289,7 +338,63 @@ func TestClient_NewUploadRequest(t *testing.T) {
 				accessToken: "access-token",
 			}
 
-			req, err := c.NewUploadRequest(tc.ctx, tc.url, tc.filepath)
+			req, closer, err := c.NewUploadRequest(tc.ctx, tc.url, tc.filepath)
+			if err == nil {
+				defer closer.Close()
+			}
+
+			if tc.expectedError != "" {
+				assert.Nil(t, req)
+				assert.Nil(t, closer)
+				assert.EqualError(t, err, tc.expectedError)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, req)
+				assert.NotNil(t, closer)
+				assert.NotEmpty(t, req.Header.Get(headerUserAgent))
+				assert.NotEmpty(t, req.Header.Get(headerAccept))
+				assert.NotEmpty(t, req.Header.Get(headerContentType))
+				assert.NotEmpty(t, req.Header.Get(headerAuth))
+			}
+		})
+	}
+}
+
+func TestClient_NewDownloadRequest(t *testing.T) {
+	tests := []struct {
+		name          string
+		ctx           context.Context
+		url           string
+		expectedError string
+	}{
+		{
+			name:          "InvalidURL",
+			ctx:           context.Background(),
+			url:           ":invalid",
+			expectedError: `parse ":invalid": missing protocol scheme`,
+		},
+		{
+			name:          "NilContext",
+			ctx:           nil,
+			url:           "/octocat/Hello-World/releases/download/v1.0.0/asset",
+			expectedError: `net/http: nil Context`,
+		},
+		{
+			name:          "Success",
+			ctx:           context.Background(),
+			url:           "/octocat/Hello-World/releases/download/v1.0.0/asset",
+			expectedError: ``,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Client{
+				downloadURL: publicDownloadURL,
+				accessToken: "access-token",
+			}
+
+			req, err := c.NewDownloadRequest(tc.ctx, tc.url)
 
 			if tc.expectedError != "" {
 				assert.Nil(t, req)
@@ -298,8 +403,6 @@ func TestClient_NewUploadRequest(t *testing.T) {
 				assert.NoError(t, err)
 				assert.NotNil(t, req)
 				assert.NotEmpty(t, req.Header.Get(headerUserAgent))
-				assert.NotEmpty(t, req.Header.Get(headerAccept))
-				assert.NotEmpty(t, req.Header.Get(headerContentType))
 				assert.NotEmpty(t, req.Header.Get(headerAuth))
 			}
 		})
@@ -505,7 +608,7 @@ func TestClient_Do(t *testing.T) {
 			},
 		},
 		{
-			name: "Success_JSON",
+			name: "Success_Struct",
 			mockResponses: []MockResponse{
 				{"GET", "/user", 200, header, `{
 						"login": "octocat",
@@ -521,6 +624,28 @@ func TestClient_Do(t *testing.T) {
 			reqMethod: "GET",
 			reqURL:    "/user",
 			body:      new(user),
+			expectedResponse: &Response{
+				Pages: expectedPages,
+				Rate:  expectedRate,
+			},
+		},
+		{
+			name: "Success_Map",
+			mockResponses: []MockResponse{
+				{"GET", "/user", 200, header, `{
+						"login": "octocat",
+						"id": 1,
+						"name": "The Octocat",
+						"email": "octocat@github.com"
+				}`},
+			},
+			c: &Client{
+				httpClient: &http.Client{},
+				rates:      map[rateGroup]Rate{},
+			},
+			reqMethod: "GET",
+			reqURL:    "/user",
+			body:      new(map[string]interface{}),
 			expectedResponse: &Response{
 				Pages: expectedPages,
 				Rate:  expectedRate,
