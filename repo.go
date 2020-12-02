@@ -388,7 +388,7 @@ func (s *RepoService) BranchProtection(ctx context.Context, branch string, enabl
 }
 
 // Tags retrieves all tags for a given repository page by page.
-// See https://docs.github.com/en/free-pro-team@latest/rest/reference/repos#list-repository-tags
+// See https://docs.github.com/rest/reference/repos#list-repository-tags
 func (s *RepoService) Tags(ctx context.Context, pageSize, pageNo int) ([]Tag, *Response, error) {
 	url := fmt.Sprintf("/repos/%s/%s/tags", s.owner, s.repo)
 	req, err := s.client.NewPageRequest(ctx, "GET", url, pageSize, pageNo, nil)
