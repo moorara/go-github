@@ -37,8 +37,8 @@ func main() {
 ```
 
 
-[godoc-url]: https://pkg.go.dev/github.com/moorara/go-gituhb
-[godoc-image]: https://pkg.go.dev/badge/github.com/moorara/go-gituhb
+[godoc-url]: https://pkg.go.dev/github.com/moorara/go-github
+[godoc-image]: https://pkg.go.dev/badge/github.com/moorara/go-github
 [workflow-url]: https://github.com/moorara/go-github/actions
 [workflow-image]: https://github.com/moorara/go-github/workflows/Main/badge.svg
 [goreport-url]: https://goreportcard.com/report/github.com/moorara/go-github
