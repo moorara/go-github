@@ -2543,7 +2543,7 @@ func TestRepoService_DownloadTarArchive(t *testing.T) {
 		{
 			name: "InvalidStatusCode",
 			mockResponses: []MockResponse{
-				{"GET", "/octocat/Hello-World/tarball/main", 401, http.Header{}, ``},
+				{"GET", "/repos/octocat/Hello-World/tarball/main", 401, http.Header{}, ``},
 			},
 			s: &RepoService{
 				client: c,
@@ -2553,12 +2553,12 @@ func TestRepoService_DownloadTarArchive(t *testing.T) {
 			ctx:           context.Background(),
 			ref:           "main",
 			outFile:       "/dev/null",
-			expectedError: `GET /octocat/Hello-World/tarball/main: 401 `,
+			expectedError: `GET /repos/octocat/Hello-World/tarball/main: 401 `,
 		},
 		{
 			name: "Success",
 			mockResponses: []MockResponse{
-				{"GET", "/octocat/Hello-World/tarball/main", 200, header, `content`},
+				{"GET", "/repos/octocat/Hello-World/tarball/main", 200, header, `content`},
 			},
 			s: &RepoService{
 				client: c,
@@ -2640,7 +2640,7 @@ func TestRepoService_DownloadZipArchive(t *testing.T) {
 		{
 			name: "InvalidStatusCode",
 			mockResponses: []MockResponse{
-				{"GET", "/octocat/Hello-World/zipball/main", 401, http.Header{}, ``},
+				{"GET", "/repos/octocat/Hello-World/zipball/main", 401, http.Header{}, ``},
 			},
 			s: &RepoService{
 				client: c,
@@ -2650,12 +2650,12 @@ func TestRepoService_DownloadZipArchive(t *testing.T) {
 			ctx:           context.Background(),
 			ref:           "main",
 			outFile:       "/dev/null",
-			expectedError: `GET /octocat/Hello-World/zipball/main: 401 `,
+			expectedError: `GET /repos/octocat/Hello-World/zipball/main: 401 `,
 		},
 		{
 			name: "Success",
 			mockResponses: []MockResponse{
-				{"GET", "/octocat/Hello-World/zipball/main", 200, header, `content`},
+				{"GET", "/repos/octocat/Hello-World/zipball/main", 200, header, `content`},
 			},
 			s: &RepoService{
 				client: c,
