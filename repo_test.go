@@ -2,6 +2,8 @@ package github
 
 import (
 	"context"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"testing"
@@ -2409,7 +2411,7 @@ func TestRepoService_DownloadReleaseAsset(t *testing.T) {
 		ctx              context.Context
 		releaseTag       string
 		assetName        string
-		outFile          string
+		w                io.Writer
 		expectedResponse *Response
 		expectedError    string
 	}{
@@ -2424,22 +2426,8 @@ func TestRepoService_DownloadReleaseAsset(t *testing.T) {
 			ctx:           nil,
 			releaseTag:    "v1.0.0",
 			assetName:     "example.zip",
-			outFile:       "/dev/null",
+			w:             nil,
 			expectedError: `net/http: nil Context`,
-		},
-		{
-			name:          "NoFile",
-			mockResponses: []MockResponse{},
-			s: &RepoService{
-				client: c,
-				owner:  "octocat",
-				repo:   "Hello-World",
-			},
-			ctx:           context.Background(),
-			releaseTag:    "v1.0.0",
-			assetName:     "example.zip",
-			outFile:       "",
-			expectedError: `open : no such file or directory`,
 		},
 		{
 			name: "InvalidStatusCode",
@@ -2454,7 +2442,7 @@ func TestRepoService_DownloadReleaseAsset(t *testing.T) {
 			ctx:           context.Background(),
 			releaseTag:    "v1.0.0",
 			assetName:     "example.zip",
-			outFile:       "/dev/null",
+			w:             ioutil.Discard,
 			expectedError: `GET /octocat/Hello-World/releases/download/v1.0.0/example.zip: 401 `,
 		},
 		{
@@ -2470,7 +2458,7 @@ func TestRepoService_DownloadReleaseAsset(t *testing.T) {
 			ctx:        context.Background(),
 			releaseTag: "v1.0.0",
 			assetName:  "example.zip",
-			outFile:    "/dev/null",
+			w:          ioutil.Discard,
 			expectedResponse: &Response{
 				Rate: expectedRate,
 			},
@@ -2482,7 +2470,7 @@ func TestRepoService_DownloadReleaseAsset(t *testing.T) {
 			ts := newHTTPTestServer(tc.mockResponses...)
 			tc.s.client.downloadURL, _ = url.Parse(ts.URL)
 
-			resp, err := tc.s.DownloadReleaseAsset(tc.ctx, tc.releaseTag, tc.assetName, tc.outFile)
+			resp, err := tc.s.DownloadReleaseAsset(tc.ctx, tc.releaseTag, tc.assetName, tc.w)
 
 			if tc.expectedError != "" {
 				assert.Nil(t, resp)
@@ -2510,7 +2498,7 @@ func TestRepoService_DownloadTarArchive(t *testing.T) {
 		s                *RepoService
 		ctx              context.Context
 		ref              string
-		outFile          string
+		w                io.Writer
 		expectedResponse *Response
 		expectedError    string
 	}{
@@ -2524,21 +2512,8 @@ func TestRepoService_DownloadTarArchive(t *testing.T) {
 			},
 			ctx:           nil,
 			ref:           "main",
-			outFile:       "/dev/null",
+			w:             nil,
 			expectedError: `net/http: nil Context`,
-		},
-		{
-			name:          "NoFile",
-			mockResponses: []MockResponse{},
-			s: &RepoService{
-				client: c,
-				owner:  "octocat",
-				repo:   "Hello-World",
-			},
-			ctx:           context.Background(),
-			ref:           "main",
-			outFile:       "",
-			expectedError: `open : no such file or directory`,
 		},
 		{
 			name: "InvalidStatusCode",
@@ -2552,7 +2527,7 @@ func TestRepoService_DownloadTarArchive(t *testing.T) {
 			},
 			ctx:           context.Background(),
 			ref:           "main",
-			outFile:       "/dev/null",
+			w:             ioutil.Discard,
 			expectedError: `GET /repos/octocat/Hello-World/tarball/main: 401 `,
 		},
 		{
@@ -2565,9 +2540,9 @@ func TestRepoService_DownloadTarArchive(t *testing.T) {
 				owner:  "octocat",
 				repo:   "Hello-World",
 			},
-			ctx:     context.Background(),
-			ref:     "main",
-			outFile: "/dev/null",
+			ctx: context.Background(),
+			ref: "main",
+			w:   ioutil.Discard,
 			expectedResponse: &Response{
 				Rate: expectedRate,
 			},
@@ -2579,7 +2554,7 @@ func TestRepoService_DownloadTarArchive(t *testing.T) {
 			ts := newHTTPTestServer(tc.mockResponses...)
 			tc.s.client.apiURL, _ = url.Parse(ts.URL)
 
-			resp, err := tc.s.DownloadTarArchive(tc.ctx, tc.ref, tc.outFile)
+			resp, err := tc.s.DownloadTarArchive(tc.ctx, tc.ref, tc.w)
 
 			if tc.expectedError != "" {
 				assert.Nil(t, resp)
@@ -2607,7 +2582,7 @@ func TestRepoService_DownloadZipArchive(t *testing.T) {
 		s                *RepoService
 		ctx              context.Context
 		ref              string
-		outFile          string
+		w                io.Writer
 		expectedResponse *Response
 		expectedError    string
 	}{
@@ -2621,21 +2596,8 @@ func TestRepoService_DownloadZipArchive(t *testing.T) {
 			},
 			ctx:           nil,
 			ref:           "main",
-			outFile:       "/dev/null",
+			w:             nil,
 			expectedError: `net/http: nil Context`,
-		},
-		{
-			name:          "NoFile",
-			mockResponses: []MockResponse{},
-			s: &RepoService{
-				client: c,
-				owner:  "octocat",
-				repo:   "Hello-World",
-			},
-			ctx:           context.Background(),
-			ref:           "main",
-			outFile:       "",
-			expectedError: `open : no such file or directory`,
 		},
 		{
 			name: "InvalidStatusCode",
@@ -2649,7 +2611,7 @@ func TestRepoService_DownloadZipArchive(t *testing.T) {
 			},
 			ctx:           context.Background(),
 			ref:           "main",
-			outFile:       "/dev/null",
+			w:             ioutil.Discard,
 			expectedError: `GET /repos/octocat/Hello-World/zipball/main: 401 `,
 		},
 		{
@@ -2662,9 +2624,9 @@ func TestRepoService_DownloadZipArchive(t *testing.T) {
 				owner:  "octocat",
 				repo:   "Hello-World",
 			},
-			ctx:     context.Background(),
-			ref:     "main",
-			outFile: "/dev/null",
+			ctx: context.Background(),
+			ref: "main",
+			w:   ioutil.Discard,
 			expectedResponse: &Response{
 				Rate: expectedRate,
 			},
@@ -2676,7 +2638,7 @@ func TestRepoService_DownloadZipArchive(t *testing.T) {
 			ts := newHTTPTestServer(tc.mockResponses...)
 			tc.s.client.apiURL, _ = url.Parse(ts.URL)
 
-			resp, err := tc.s.DownloadZipArchive(tc.ctx, tc.ref, tc.outFile)
+			resp, err := tc.s.DownloadZipArchive(tc.ctx, tc.ref, tc.w)
 
 			if tc.expectedError != "" {
 				assert.Nil(t, resp)

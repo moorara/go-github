@@ -3,7 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
-	"os"
+	"io"
 	"path/filepath"
 	"time"
 )
@@ -601,20 +601,14 @@ func (s *RepoService) UploadReleaseAsset(ctx context.Context, releaseID int, ass
 }
 
 // DownloadReleaseAsset downloads an asset from a GitHub release.
-func (s *RepoService) DownloadReleaseAsset(ctx context.Context, releaseTag, assetName, outFile string) (*Response, error) {
+func (s *RepoService) DownloadReleaseAsset(ctx context.Context, releaseTag, assetName string, w io.Writer) (*Response, error) {
 	url := fmt.Sprintf("/%s/%s/releases/download/%s/%s", s.owner, s.repo, releaseTag, assetName)
 	req, err := s.client.NewDownloadRequest(ctx, url)
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := os.OpenFile(outFile, os.O_CREATE|os.O_WRONLY, 0755)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	resp, err := s.client.Do(req, f)
+	resp, err := s.client.Do(req, w)
 	if err != nil {
 		return nil, err
 	}
@@ -623,20 +617,14 @@ func (s *RepoService) DownloadReleaseAsset(ctx context.Context, releaseTag, asse
 }
 
 // DownloadTarArchive downloads a repository archive in tar format.
-func (s *RepoService) DownloadTarArchive(ctx context.Context, ref, outFile string) (*Response, error) {
+func (s *RepoService) DownloadTarArchive(ctx context.Context, ref string, w io.Writer) (*Response, error) {
 	url := fmt.Sprintf("/repos/%s/%s/tarball/%s", s.owner, s.repo, ref)
 	req, err := s.client.NewRequest(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := os.OpenFile(outFile, os.O_CREATE|os.O_WRONLY, 0755)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	resp, err := s.client.Do(req, f)
+	resp, err := s.client.Do(req, w)
 	if err != nil {
 		return nil, err
 	}
@@ -645,20 +633,14 @@ func (s *RepoService) DownloadTarArchive(ctx context.Context, ref, outFile strin
 }
 
 // DownloadZipArchive downloads a repository archive in zip format.
-func (s *RepoService) DownloadZipArchive(ctx context.Context, ref, outFile string) (*Response, error) {
+func (s *RepoService) DownloadZipArchive(ctx context.Context, ref string, w io.Writer) (*Response, error) {
 	url := fmt.Sprintf("/repos/%s/%s/zipball/%s", s.owner, s.repo, ref)
 	req, err := s.client.NewRequest(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := os.OpenFile(outFile, os.O_CREATE|os.O_WRONLY, 0755)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	resp, err := s.client.Do(req, f)
+	resp, err := s.client.Do(req, w)
 	if err != nil {
 		return nil, err
 	}
