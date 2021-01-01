@@ -608,7 +608,7 @@ func (s *RepoService) DownloadReleaseAsset(ctx context.Context, releaseTag, asse
 		return nil, err
 	}
 
-	f, err := os.OpenFile(outFile, os.O_WRONLY, 0755)
+	f, err := os.OpenFile(outFile, os.O_CREATE|os.O_WRONLY, 0755)
 	if err != nil {
 		return nil, err
 	}
@@ -630,7 +630,7 @@ func (s *RepoService) DownloadTarArchive(ctx context.Context, ref, outFile strin
 		return nil, err
 	}
 
-	f, err := os.OpenFile(outFile, os.O_WRONLY, 0755)
+	f, err := os.OpenFile(outFile, os.O_CREATE|os.O_WRONLY, 0755)
 	if err != nil {
 		return nil, err
 	}
@@ -652,7 +652,7 @@ func (s *RepoService) DownloadZipArchive(ctx context.Context, ref, outFile strin
 		return nil, err
 	}
 
-	f, err := os.OpenFile(outFile, os.O_WRONLY, 0755)
+	f, err := os.OpenFile(outFile, os.O_CREATE|os.O_WRONLY, 0755)
 	if err != nil {
 		return nil, err
 	}
